@@ -89,6 +89,27 @@ ggplot(aes(x=tsyear, y=total_catch), data=cod) +
 head(fish)
 ```
 
+The Worm et al. (2006) paper defines a fishery stock collapse as a decline in total catch to less than 10% of the maximum historical total catch. Did the Eastern Canadian cod stock "collapse" according to this definition? We'll use the `cummax()` function which returns the maximum value in all rows of a data frame previous to a particular row, to find the historical maximum.
+
+```{r}
+# Find the historical max total catch for each year in the time series
+# Define collapse as a total catch <= 10% of the historical max catch
+cod_collapse = cod %>%
+  mutate(historical_max_catch = cummax(total_catch),
+         collapse = total_catch <= 0.1*historical_max_catch) 
+tail(cod_collapse)
+
+# What year did the collapse happen?
+cod_collapse %>% filter(collapse==TRUE) %>% summarize(tsyear=min(tsyear)) %>% .$tsyear
+
+# Plot the catch time series and the collapse year
+ggplot() + 
+  geom_line(aes(y=total_catch, x=tsyear, color=collapse), data=cod_collapse) +
+  geom_vline(xintercept = cod_collapse %>% filter(collapse==TRUE) %>% summarize(tsyear=min(tsyear)) %>% .$tsyear) + # Draws vertical line
+  scale_x_continuous(breaks=c(seq(0,2015,10))) + # Add more breaks on x axis
+  xlab("Total catch (Mt)") + ylab("Year") + ggtitle("East Canada Cod")
+
+```
 
 
 
