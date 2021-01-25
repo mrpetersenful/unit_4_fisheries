@@ -37,28 +37,8 @@ The RAM data is structured as a large relational database which contains many di
 ```{r}
 library(tidyverse)
 
-head(timeseries)
-head(stock)
-head(area)
-head(tsmetrics)
-
 head(biometrics) # describes all parameter types available in the bioparams table
 head(tsmetrics) # describes all time series types available in the timeseries table
-
-x = bioparams %>% filter(stockid=="CODNEAR") # bioid %in% c("Trophiclevel-value", "Habitat-Habitat")
-head(x)
-
-# There are 828 unique stockid in bioparams, but only 61 trophic levels and only 298 habitats
-length(unique(bioparams$stockid))
-dim(bioparams %>% filter(bioid=="Habitat-Habitat"))
-dim(bioparams %>% filter(bioid=="Trophiclevel-value"))
-
-# Which bioparams show up most frequently across the different stocks?
-bioparam_count = bioparams %>% group_by(bioid) %>% summarize(n=n()) %>% arrange(desc(n))
-bioparam_count
-
-x = bioparams %>% filter(bioid=="REC-AGE-yr")
-hist(as.numeric(x$biovalue))
 ```
 
 ### Canadian cod fishery collapse
@@ -119,8 +99,6 @@ ggplot(aes(x=tsyear, y=total_catch), data=cod) +
   geom_line() +
   labs(x= "Year", y= "Total Catch (Metric Tons)", 
        title = "Cod Total Catch in East Canadian Coast")
-
-head(fish)
 ```
 
 The Worm et al. (2006) paper defines a fishery stock collapse as a decline in total catch to less than 10% of the maximum historical total catch. Did the Eastern Canadian cod stock "collapse" according to this definition? We'll use the `cummax()` function which returns the maximum value in all rows of a data frame previous to a particular row, to find the historical maximum.
@@ -152,6 +130,7 @@ ggplot() +
 ### Find all stocks that have collapsed
 
 ```{r}
+# Find all stocks that have collapsed
 collapse = fish_catch_max_assess %>% 
   filter(!is.na(tsvalue)) %>%  # Remove NAs (which can't be ignored with cummax())
   group_by(stocklong) %>%
@@ -190,6 +169,112 @@ ggplot(data = collapse_ts, aes(x=first_collapse_yr, y=ratio_ever_collapsed)) +
 
 ```
 
+
+
+
+Poisson model
+How much time does a stock spend in the collapsed state? Is the length of time that a stock spends in the "collapsed" state dependent on how frequently it is overfished or how often its biomass is below $B_MSY$?
+
+```{r}
+
+# U / U_MSY and B / B_MSY
+summary(timeseries_values_views)
+u_dat = timeseries_values_views %>% 
+  left_join(stock, by=c("stockid","stocklong")) %>%
+  filter(!is.na(UdivUmsypref)) %>%
+  filter(!is.na(BdivBmsypref))
+dim(u_dat)
+
+# Calculate ratio of years a stock is overfished and stock biomass < B_MSY
+u_summary = u_dat %>% 
+  group_by(stockid) %>%
+  summarize(yrs_data = n(),
+            ratio_yrs_overfished = sum(UdivUmsypref > 1)/yrs_data,
+            ratio_yrs_low_stock = sum(BdivBmsypref < 1)/yrs_data) %>%
+  select(-yrs_data)
+head(u_summary)
+
+# Count num years each stock is collapsed; join with counts of overfished-years and low-stock-years
+collapse_summary = collapse %>%
+  group_by(stockid, region) %>%
+  summarize(yrs_data = n(),
+            yrs_collapsed = sum(current_collapse)) %>%
+  left_join(u_summary, by="stockid")
+head(collapse_summary)
+
+# Do we have zero-inflation?
+table(temp$yrs_collapsed)
+
+# Build poisson model
+model_p = glm(yrs_collapsed ~ ratio_yrs_overfished + ratio_yrs_low_stock, offset(log(yrs_data)), data=temp %>% filter(yrs_collapsed>0), family="poisson") 
+summary(model_p)
+
+# Do we have overdispersion?
+library(AER) #dispersiontest
+dispersiontest(model_p)$p.value < 0.05
+
+# Address overdispersion with a quasipoisson model
+model_qp = glm(yrs_collapsed ~ ratio_yrs_overfished + ratio_yrs_low_stock , offset(log(yrs_data)), data=temp %>% filter(yrs_collapsed>0), family="quasipoisson") 
+summary(model_qp)
+```
+
+
+
+
+
+## EXTRA
+
+```{r}
+
+# frequency of overfishing by region
+overfished_count_by_region = u_dat %>%
+  filter(year>=1950) %>%
+  group_by(year, region) %>%
+  summarize(n_stocks = n(), 
+            overfished = sum(UdivUmsypref>1),   # Fishing pressure (U) > U_MSY
+            underfished = sum(UdivUmsypref<=1), # Fishing pressure (U) <= U_MSY
+            healthy_stock = sum(BdivBmsypref>=1),# Biomass (B) >= B_MSY
+            unhealthy_stock = sum(BdivBmsypref<1))
+
+ggplot() +
+  geom_line(aes(x=year, y=overfished/n_stocks), data=overfished_count_by_region) +
+  facet_wrap(~region)
+
+
+### Bioparam data
+# There are 828 unique stockid in bioparams, but only 61 trophic levels and only 298 habitats
+length(unique(bioparams$stockid))
+dim(bioparams %>% filter(bioid=="Habitat-Habitat"))
+dim(bioparams %>% filter(bioid=="Trophiclevel-value"))
+
+# Which bioparams show up most frequently across the different stocks?
+bioparam_count = bioparams %>% group_by(bioid) %>% summarize(n=n()) %>% arrange(desc(n))
+bioparam_count
+
+# The habitat data is a mess
+bioparams %>% 
+  filter(bioid=="Habitat-Habitat") %>% 
+  group_by(biovalue) %>%
+  summarize(n = n())
+
+# Clean it up
+habitat_data = bioparams %>% 
+  filter(bioid=="Habitat-Habitat") %>% 
+  mutate(habitat = tolower(biovalue),
+         habitat = ifelse(grepl( "demersal", habitat, fixed = TRUE),"demersal", habitat),
+         habitat = ifelse(grepl( "pelagic", habitat, fixed = TRUE),"pelagic", habitat)) %>%
+  filter(habitat %in% c("demersal", "pelagic")) %>%
+  distinct(stockid, habitat)
+
+# How many years is a stock collapsed?
+collapse_summary = collapse %>%
+  left_join(habitat_data, by="stockid") %>%
+  mutate(habitat = as.factor(habitat)) %>%
+  filter(!is.na(habitat)) %>%
+  group_by(stockid, region, habitat) %>%
+  summarize(yrs_data = n(),
+            yrs_collapsed = sum(current_collapse))
+```
 
 ### Joins
 
