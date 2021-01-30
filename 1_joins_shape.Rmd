@@ -164,11 +164,6 @@ This is the "wide" format, because each type of observation has its own column. 
 long = survey %>% 
   gather("barnacle_n", "chiton_n", "mussel_n", key="taxon", value="counts")
 head(long)
-
-# Look how easy it is to plot when your data is in the long format
-# Otherwise you'd need to write a new geom_point() line for each x/y combo (i.e. each species)
-ggplot(aes(x=quadrat_id, y=counts, color=taxon), data=long) +
-  geom_point()
 ```
 
 Then we can take long data and convert it to wide data for analysis with the `spread()` function. This time, identify the `key` column that will become column names and the `value` column that holds the data that will fill each new column. 
@@ -179,6 +174,15 @@ wide = long %>%
 head(wide)
 ```
 
+***
+
+Exercise 1.2
+
+When the invertebrate survey is in the orignial (wide) format, use ggplot to create a scatter plot where the quadrat_id is along the x-axis and the count data is along the y-axis. Give each different taxon a different point color. Now create the same exact plot using the survey data in the long format.
+
+If you wanted to build a linear model to predict the number of barnacles in a quadrat as a function of the number of other invertebrates that were found in the quadrat (i.e. chitons and mussels), what table shape would you need, long or wide?
+
+***
 
 ### Acknowledgments 
 

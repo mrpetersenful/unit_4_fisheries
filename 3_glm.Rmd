@@ -26,7 +26,7 @@ load('data/RAMLDB v4.491/DB Files With Assessment Data/R Data/DBdata[asmt][v4.49
 
 First I'm going to import the code for the tables we built in the last class, such as fish_catch_max_assess and collapse. That way I can use the data manipulation work we've already done as a basis for running our models today. I just put all of the code used to generate these tables in their own R script, and now I use the `source()` function to run that R script and put all of the associated variables in my environment. You could also just copy and paste the code we wrote in the last class at the top of today's R script.
 
-```{r, results="hide"}
+```{r, results="hide", message=FALSE}
 source('build_collapse_table.R')
 ```
 
