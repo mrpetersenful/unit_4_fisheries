@@ -8,12 +8,20 @@ knitr::opts_chunk$set(fig.width=6, fig.asp = 0.618, collapse=TRUE)
 
 ### Unit 4: Fisheries
 #### Lesson 1: Joins and shape
-#### New functions: left_join(), right_join()
+#### New functions: left_join(), right_join(), inner_join(), full_join(), semi_join(), anti_join(), gather(), spread()
 
 ***
 https://statisticsglobe.com/r-dplyr-join-inner-left-right-full-semi-anti
 
 ***
+
+### Fisheries relational database
+
+In this module we will examine fisheries stock assessment data and identify collapsed fisheries. We will be using the RAM Legacy Database, a massive dataset of fisheries metrics across the globe: 
+
+https://www.ramlegacy.org/
+
+The RAM database has over 50 tables with a range of sizes and shapes, and we will be using several of them. The chief table we will be utilizing has over 1 million rows. Each of the tables are connected by a series of IDs that can be used to merge data appropriately. To manage this massive relational database, we will first get comfortable with the join operations in `dplyr`.
 
 ### Joins
 
@@ -23,8 +31,8 @@ or here: https://rstudio.com/wp-content/uploads/2015/02/data-wrangling-cheatshee
 
 Here we will learn how to merge data with the join functions of the `dplyr` package. There are 2 types of joins: 
 
--  Mutating joins add new variables to one data frame from matching observations in another data frame
--  Filtering joins filter observations from one data frame based on whether or not they match an observation in the other table
+-  **Mutating joins** add new variables to one table from matching observations in another table
+-  **Filtering joins** filter observations from one table based on whether or not they match an observation in the other table
 
 dplyr join functions:
 
@@ -37,9 +45,11 @@ dplyr join functions:
   + **semi_join:** Return all rows in data_1 that have a match in data_2.
   + **anti_join:** Return all rows in data_1 that do not have a match in data_2..
 
+We will examine these differnt types of joins using very simple example data.
+
 Example data:
 
-```{r}
+```{r, message=FALSE}
 library(tidyverse)
 data1 <- data.frame(ID = 1:2,                      # Create first example data frame
                     X1 = c("a1", "a2"),
@@ -49,7 +59,7 @@ data2 <- data.frame(ID = 2:3,                      # Create second example data 
                     stringsAsFactors = FALSE)
 ```
 
-The figure below illustrates what our two data frames look like and how we can merge them based on the different join functions of the dplyr package. On the top of the figure you can see the structure of our example data frames. Both data frames contain two columns: The ID and one variable. Note that both data frames have the ID No. 2 in common. On the bottom row of the figure you can see how each of the join functions merges our two example data frames.
+The figure below illustrates what our two data frames look like and how we can merge them based on the different join functions of the `dplyr` package. On the top of the figure you can see the structure of our example data frames. Both data frames contain two columns: The ID and one variable. Note that both data frames have the ID No. 2 in common. On the bottom row of the figure you can see how each of the join functions merges our two example data frames.
 
 ![](doc/dplyr-data-join-functions-overview_inner_join-left_join-right_join-full_join-semi_join-anti_join.png){width=50%}
 
@@ -113,7 +123,7 @@ data12_semi
 
 ### Anti join
 
-The anti_join() function returns all rows from data1 where there are NOT matching values in data2, keeping just the columns from data1. 
+The `anti_join()` function returns all rows from data1 where there are NOT matching values in data2, keeping just the columns from data1. 
 
 ```{r}
 data12_anti = data1 %>%
@@ -125,14 +135,49 @@ data12_anti
 
 ### Words of wisdom
 
-Whenever I use a join function, I always check the dimensions using `dim()` of my data frames before and after the joins to make sure I understand what rows and columns were added. You can also use the `summary()` function, or use `filter()` combined with `is.na()` to check for `NAs` so that you have a good sense of what data are missing after a join.
+Whenever I use a join function, I **always** check the dimensions using `dim()` of my data frames before and after the joins to make sure I understand what rows and columns were added. You can also use the `summary()` function, or use `filter()` combined with `is.na()` to check for `NAs` so that you have a good sense of what data are missing after a join.
+
+***
 
 ### Exercise 1.1
 
 Let's imagine you had a month of scuba survey data where each row was a different fish that was observed on a rocky reef. The fish survey data includes the fish's common name, size, date, reef site and observation ID. Then you have a second data frame that has encylopedia-type data downloaded from fishbase.org with common name, genus, species, trophic level and maximum length. If your goal was to add the genus and species information to your survey data, what join would you use? What would happen if there were multiple rows of in your fishbase data frame corresponding to the same common name (perhaps one row included a max length estimate pulled from Miller et al. and another row included a max length pulled from Garcia et al.)? Could that mess up your scuba survey analysis?
 
+***
 
+### Gather and spread
 
+The functions gather() and spread() in dplyr are used to change the shape of a table from wide to long and from long to wide. This can be an important step for preparing your data for specific types of analysis. For example, a lot of PCA / EOF / nmds analysis packages require data to be in a wide format where different types of observations have their own rows. However, many of ggplot's really slick features work best when data is in a long format. 
+
+To look at these two functions, we'll create some more example data. Let's pretend you are counting invertebrates that fall inside of a quadrat in the intertidal. Your data might look like this:
+
+```{r}
+survey = data.frame(quadrat_id = c(101, 102, 103, 104),
+                    barnacle_n = c(2, 11, 8, 27),
+                    chiton_n = c(1, 0, 0, 2),
+                    mussel_n = c(0, 1, 1, 4))
+```
+
+This is the "wide" format, because each type of observation has its own column. The `gather()` function is used to convert this data to the long format. You will select a subset of columns to stack on top of each other, and the `key` parameter will become the name of the column that contains the old column names. The `value` parameter will be the name of the column that contains the elements associated with each former column.
+
+```{r}
+long = survey %>% 
+  gather("barnacle_n", "chiton_n", "mussel_n", key="taxon", value="counts")
+head(long)
+
+# Look how easy it is to plot when your data is in the long format
+# Otherwise you'd need to write a new geom_point() line for each x/y combo (i.e. each species)
+ggplot(aes(x=quadrat_id, y=counts, color=taxon), data=long) +
+  geom_point()
+```
+
+Then we can take long data and convert it to wide data for analysis with the `spread()` function. This time, identify the `key` column that will become column names and the `value` column that holds the data that will fill each new column. 
+
+```{r}
+wide = long %>%
+  spread(key="taxon", value="counts")
+head(wide)
+```
 
 
 ### Acknowledgments 

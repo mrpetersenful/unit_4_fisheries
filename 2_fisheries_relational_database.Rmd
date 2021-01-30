@@ -11,9 +11,6 @@ knitr::opts_chunk$set(fig.width=6, fig.asp = 0.618, collapse=TRUE)
 #### New functions: 
 
 ***
-https://statisticsglobe.com/r-dplyr-join-inner-left-right-full-semi-anti
-
-***
 
 ### Fisheries Data
 
@@ -31,59 +28,88 @@ Note: Usually when I receive Excel files, I convert them to `.csv` files and rea
 load('data/RAMLDB v4.491/DB Files With Assessment Data/R Data/DBdata[asmt][v4.491].RData')
 ```
 
-The RAM data is structured as a large relational database which contains many different tables of different sizes and shapes, and the tables are related to each other through a series of different ids. The database is large and pretty complicated. From the `Database Quick Guide` document , we find out that the `biometrics` table describes all parameter types available in the `bioparams` table, and the `tsmetrics` table describes all time series types available in the `timeseries` table. Then if we look in the `Database Structure` document, we can see a table called "Table Linkages" that lists which IDs can be used to link the different tables. For example, to link `tsmetrics` with `timeseries`
+The RAM data is structured as a large relational database which contains many different tables of different sizes and shapes, and the tables are related to each other through a series of different ids. The database has over 50 tables and some tables have over 1 million rows. This data (and many other super valuable massive datasets just like this) is difficult to work with and maneuver at first. I'm going to show you what metadata files I used to get familiar with the database so that I could start this fisheries analysis. 
+
+From the `Database Quick Guide` document, we find out that the `biometrics` table describes all parameter types available in the `bioparams` table, and the `tsmetrics` table describes all time series types available in the `timeseries` table. Then if we look in the `Database Structure` document, there is a map that generally shows how the major types of tables are connected:
+
+![](doc/RAM_database_structure.png){width=50%}
 
 
-```{r}
+Looking deeper in the `Database Structure` document, there is a table called "Table Linkages" that lists which IDs can be used to link the different tables. For example, to link `tsmetrics` with `timeseries`, we must set `tsunique` to match `tsid`. In other cases, the ID that links tables has the same name. For example, both the `timeseries` table and `stock` table have a common ID called `stockid`. 
+
+The other good metadata file provided is called `Database Table Fields`. This is a spreadsheet that provides explanations for the variable names that represent the broad range of fishery metrics presented in this dataset. Now that we have glanced through the metadata, we can start a fisheries analysis.
+
+### Annual total catch by stock
+
+We are going to look in the `timeseries` dataset for annual total catch for each fish stock. After exploring the `tsmetrics` table, I found the `tsid` TCbest-MT, which is the best available annual catch data (in metric tons). The actual data is all in `timeseries`, but if we join it with the `tsmetrics` and `stock` datasets then we can look at the metadata associated with the `timeseries` data.
+
+We reduce the data by removing stocks in the "Deprecated" state. We also limit each stock to just one assessment to avoid double counting fish. We choose to retain the assessment that runs for the longest time period for each stock.
+
+```{r, message=FALSE}
 library(tidyverse)
-
-head(biometrics) # describes all parameter types available in the bioparams table
-head(tsmetrics) # describes all time series types available in the timeseries table
+library(AER) #dispersiontest
 ```
-
-### Canadian cod fishery collapse
-
-Newfoundland and Labrador's historic cod fisheries attracted local and international fishing fleets for almost five centuries before the Canadian government shut the industry down indefinitely in July 1992. By then, once-plentiful fish stocks had dwindled to near extinction and officials feared they would disappear entirely if the fisheries remained open. The moratorium put about 30,000 people in the province out of work and ended a way of life that had endured for generations in many outport communities. It also made evident the vulnerability of marine resources to overexploitation and that existing regulatory regimes were insufficient to protect cod stocks.
 
 ```{r}
 # Join timeseries, tsmetrics (time series metadata) and stock tables
 fish = timeseries %>%
   left_join(stock, by=c("stockid","stocklong")) %>%
   left_join(tsmetrics, by=c("tsid" = "tsunique")) 
-head(fish)
+glimpse(fish)
+
+# Status of the stock assessments
+unique(fish$state)
 
 # Find the best "total catch" metrics
 fish_catch = fish %>% 
-  filter(tsid == "TCbest-MT",  # Grab the best TotalCatch estimate (in MT)
+  filter(tsid == "TCbest-MT",  # Grab the best TotalCatch estimate (in metric tons)
          state != "Deprecated") # Remove stocks that are deprecated
 
-# How many unique stock assessments are there in timeseries?
-n_assessments = fish_catch %>% 
-  distinct(assessid)
-dim(n_assessments)
+# Some stocks in timeseries are subject to multiple assessments
+length(unique(fish_catch$assessid))
+length(unique(fish_catch$stockid))
 
-# some stocks may be assessed twice, in 2 different ways (!)
 # for a given stock, calculate the time period of each assessment 
 # choose the assessment that covers the longest time series 
+# if multiple assessments cover the same long time period, only keep one
 fish_max_assess = fish_catch %>% 
   group_by(stocklong, assessid) %>% # For a given stock and assessment
   summarize(max_tsyear = max(tsyear), min_tsyear = min(tsyear)) %>%
   mutate(assessment_length = max_tsyear - min_tsyear) %>%
   ungroup() %>%
   group_by(stocklong) %>%
-  slice(which.max(assessment_length))
-dim(fish_max_assess)
+  filter(assessment_length == max(assessment_length)) %>% # keep longest assessment length
+  distinct(stocklong, .keep_all=TRUE) %>% # only keep first assessment with max assessment length
+  select(stocklong, assessid, assessment_length)
+
+# Histogram of stock assessment lengths
+hist(fish_max_assess$assessment_length)
 
 # use semi_join to filter out assessments in fish_catch that are NOT the longest assessment
 fish_catch_max_assess = fish_catch %>%
   semi_join(fish_max_assess, by=c("stocklong", "assessid"))
+
+# This plot has LOTS of data - make sure you remove the legend !!
+ggplot() +
+  geom_line(aes(x=tsyear, y=tsvalue, color=stockid), data=fish_catch_max_assess) +
+  theme(legend.position = "none") +
+  ggsave('figures/total_catch_all_stocks.png', device="png", height=4, width=7, units="in")
+
+# Fishery with heighest annual catch
+fish_catch_max_assess %>% filter(tsvalue == max(tsvalue, na.rm=TRUE))
 ```
 
 ### Cod collapse
 
+Now that we have created a nice neat data set of all of the best available time series of total catch for fisheries all around the world, we can take a more detailed look at specific stocks. Let's examine the infamous collapse of the Canadian cod stock. 
+
+Newfoundland and Labrador's historic cod fisheries attracted local and international fishing fleets for almost five centuries before the Canadian government shut the industry down indefinitely in July 1992. By then, once-plentiful fish stocks had dwindled to near extinction and officials feared they would disappear entirely if the fisheries remained open. The moratorium put about 30,000 people in the province out of work and ended a way of life that had endured for generations in many port communities. It also made evident the vulnerability of marine resources to overexploitation and that existing regulatory regimes were insufficient to protect cod stocks.
+
+Let's isolate the cod stock assessments in East Coast Canada and add them together. Then we can plot a time series of the total Canadian East Coast cod stock and try to see what the collapse looked like.
+
 ```{r}
 # What regions have Atlantic cod stock assessments?
-cod_regions = fish %>% 
+cod_regions = fish_catch_max_assess %>% 
   filter(scientificname == "Gadus morhua") %>%
   distinct(region)
 
@@ -101,7 +127,7 @@ ggplot(aes(x=tsyear, y=total_catch), data=cod) +
        title = "Cod Total Catch in East Canadian Coast")
 ```
 
-The Worm et al. (2006) paper defines a fishery stock collapse as a decline in total catch to less than 10% of the maximum historical total catch. Did the Eastern Canadian cod stock "collapse" according to this definition? We'll use the `cummax()` function which returns the maximum value in all rows of a data frame previous to a particular row, to find the historical maximum.
+A paper by Worm et al. (2006; see the readings directory) defines a fishery stock collapse as a decline in total catch to less than 10% of the maximum historical total catch. Did the Eastern Canadian cod stock "collapse" according to this definition? We'll use the `cummax()` function which returns the maximum value in all rows of a data frame previous to a particular row, to find the historical maximum (i.e. the max catch observed prior to each year within the analysis). We can identify the year the collapse occurred and add that to our time series plot.
 
 ```{r}
 # Find the historical max total catch for each year in the time series
@@ -123,11 +149,11 @@ ggplot() +
   geom_vline(xintercept = cod_collapse_year) + # Draws vertical line
   scale_x_continuous(breaks=c(seq(0,2015,10))) + # Add more breaks on x axis
   xlab("Total catch (Mt)") + ylab("Year") + ggtitle("East Canada Cod")
-
 ```
 
+### Examine fishery collapse across ALL stocks
 
-### Find all stocks that have collapsed
+Now that we have explored what a stock collapse looks like with cod in Eastern Canadian waters, let's look at the whole RAM dataset and count the number of stocks that have collapsed. How do stock collapse events change through time? How do they change by geographic region?
 
 ```{r}
 # Find all stocks that have collapsed
@@ -139,19 +165,12 @@ collapse = fish_catch_max_assess %>%
          ever_collapsed = cumsum(current_collapse) > 0) %>%
   ungroup()
 
-# Run a logistic regression
-model_data = collapse %>%
-  group_by(stockid, region) %>%
-  summarize(ever_collapsed = any(ever_collapsed))
-
-model = glm(ever_collapsed ~ region, data = model_data, family = "binomial")
-summary(model)
-
 # Find the year each stock collapsed for the first time
 collapse_yr = collapse %>%
-  group_by(stocklong) %>%
+  group_by(stockid, stocklong, region) %>% # really just groups by stockid, but retains region
   filter(ever_collapsed == TRUE) %>%
-  summarize(first_collapse_yr = min(tsyear))
+  summarize(first_collapse_yr = min(tsyear)) %>%
+  ungroup()
 
 # Plot a histogram of first collapse year
 ggplot(data = collapse_yr, aes(x=first_collapse_yr)) +
@@ -166,125 +185,15 @@ collapse_ts = collapse_yr %>%
 
 ggplot(data = collapse_ts, aes(x=first_collapse_yr, y=ratio_ever_collapsed)) +
   geom_line()
-
 ```
 
+*** 
+
+### Exercise 2.1
+
+Create the same time series that shows the # of stocks that have collapsed (historically) divided by the total number of stocks that are tracked in the dataset. However, show this plot separately for EACH region. You may need to create a new data frame that counts the number of stocks tracked in each region, then join that new data frame to the collapse_ts data frame to calculate your ratios.
+
+***
 
 
 
-Poisson model
-How much time does a stock spend in the collapsed state? Is the length of time that a stock spends in the "collapsed" state dependent on how frequently it is overfished or how often its biomass is below $B_MSY$?
-
-```{r}
-
-# U / U_MSY and B / B_MSY
-summary(timeseries_values_views)
-u_dat = timeseries_values_views %>% 
-  left_join(stock, by=c("stockid","stocklong")) %>%
-  filter(!is.na(UdivUmsypref)) %>%
-  filter(!is.na(BdivBmsypref))
-dim(u_dat)
-
-# Calculate ratio of years a stock is overfished and stock biomass < B_MSY
-u_summary = u_dat %>% 
-  group_by(stockid) %>%
-  summarize(yrs_data = n(),
-            ratio_yrs_overfished = sum(UdivUmsypref > 1)/yrs_data,
-            ratio_yrs_low_stock = sum(BdivBmsypref < 1)/yrs_data) %>%
-  select(-yrs_data)
-head(u_summary)
-
-# Count num years each stock is collapsed; join with counts of overfished-years and low-stock-years
-collapse_summary = collapse %>%
-  group_by(stockid, region) %>%
-  summarize(yrs_data = n(),
-            yrs_collapsed = sum(current_collapse)) %>%
-  left_join(u_summary, by="stockid")
-head(collapse_summary)
-
-# Do we have zero-inflation?
-table(temp$yrs_collapsed)
-
-# Build poisson model
-model_p = glm(yrs_collapsed ~ ratio_yrs_overfished + ratio_yrs_low_stock, offset(log(yrs_data)), data=temp %>% filter(yrs_collapsed>0), family="poisson") 
-summary(model_p)
-
-# Do we have overdispersion?
-library(AER) #dispersiontest
-dispersiontest(model_p)$p.value < 0.05
-
-# Address overdispersion with a quasipoisson model
-model_qp = glm(yrs_collapsed ~ ratio_yrs_overfished + ratio_yrs_low_stock , offset(log(yrs_data)), data=temp %>% filter(yrs_collapsed>0), family="quasipoisson") 
-summary(model_qp)
-```
-
-
-
-
-
-## EXTRA
-
-```{r}
-
-# frequency of overfishing by region
-overfished_count_by_region = u_dat %>%
-  filter(year>=1950) %>%
-  group_by(year, region) %>%
-  summarize(n_stocks = n(), 
-            overfished = sum(UdivUmsypref>1),   # Fishing pressure (U) > U_MSY
-            underfished = sum(UdivUmsypref<=1), # Fishing pressure (U) <= U_MSY
-            healthy_stock = sum(BdivBmsypref>=1),# Biomass (B) >= B_MSY
-            unhealthy_stock = sum(BdivBmsypref<1))
-
-ggplot() +
-  geom_line(aes(x=year, y=overfished/n_stocks), data=overfished_count_by_region) +
-  facet_wrap(~region)
-
-
-### Bioparam data
-# There are 828 unique stockid in bioparams, but only 61 trophic levels and only 298 habitats
-length(unique(bioparams$stockid))
-dim(bioparams %>% filter(bioid=="Habitat-Habitat"))
-dim(bioparams %>% filter(bioid=="Trophiclevel-value"))
-
-# Which bioparams show up most frequently across the different stocks?
-bioparam_count = bioparams %>% group_by(bioid) %>% summarize(n=n()) %>% arrange(desc(n))
-bioparam_count
-
-# The habitat data is a mess
-bioparams %>% 
-  filter(bioid=="Habitat-Habitat") %>% 
-  group_by(biovalue) %>%
-  summarize(n = n())
-
-# Clean it up
-habitat_data = bioparams %>% 
-  filter(bioid=="Habitat-Habitat") %>% 
-  mutate(habitat = tolower(biovalue),
-         habitat = ifelse(grepl( "demersal", habitat, fixed = TRUE),"demersal", habitat),
-         habitat = ifelse(grepl( "pelagic", habitat, fixed = TRUE),"pelagic", habitat)) %>%
-  filter(habitat %in% c("demersal", "pelagic")) %>%
-  distinct(stockid, habitat)
-
-# How many years is a stock collapsed?
-collapse_summary = collapse %>%
-  left_join(habitat_data, by="stockid") %>%
-  mutate(habitat = as.factor(habitat)) %>%
-  filter(!is.na(habitat)) %>%
-  group_by(stockid, region, habitat) %>%
-  summarize(yrs_data = n(),
-            yrs_collapsed = sum(current_collapse))
-```
-
-### Joins
-
-This module will focus on understanding and replicating 
-fisheries stock assessment data and fisheries collapse. 
-
-Instead of working with independent dataframes, we will be working with a large
-relational database which contains many different tables of different sizes and 
-shapes, but that all all related to eachother through a series of different ids.
-
-
-## The Database
-We will use data from the [RAM Legacy Stock Assessment Database](https://doi.org/10.5281/zenodo.2542918)

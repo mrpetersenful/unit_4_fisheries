@@ -1,0 +1,69 @@
+---
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.width=6, fig.asp = 0.618, collapse=TRUE) 
+```
+
+### In-class exercises
+### Unit 4: Fisheries
+
+***
+
+### Exercise 1.1
+
+Let's imagine you had a month of scuba survey data where each row was a different fish that was observed on a rocky reef. The fish survey data includes the fish's common name, size, date, reef site and observation ID. Then you have a second data frame that has encylopedia-type data downloaded from fishbase.org with common name, genus, species, trophic level and maximum length. If your goal was to add the genus and species information to your survey data, what join would you use? What would happen if there were multiple rows of in your fishbase data frame corresponding to the same common name (perhaps one row included a max length estimate pulled from Miller et al. and another row included a max length pulled from Garcia et al.)? Could that mess up your scuba survey analysis?
+
+ANSWER: I would use `left_join(survey_data, fish_base_data, by="common_name")` so that I retain all of my survey data and add in the fish base data wherever it is available. Then I would use dim() to compare the number of rows in my survey data before and after the join. If my merged data was longer, I would either: 
+
+1) If I really cared about max length, I would comb through the fish base data frame and remove the duplicate rows based on which max length study was more relevant to my analysis. 
+2) If I only wanted the genus and species info anyways, I would use distinct(observation_id) to remove duplicate rows of observations - then check again to make sure that the number of rows in my survey data frame is equal to the number of rows before the join function!
+
+*** 
+
+### Exercise 2.1
+
+Create the same time series that shows the # of stocks that have collapsed (historically) divided by the total number of stocks that are tracked in the dataset. However, show this plot separately for EACH region. You may need to create a new data frame that counts the number of stocks tracked in each region, then join that new data frame to the collapse_ts data frame to calculate your ratios.
+
+```{r}
+# Create a time series of # of stocks ever collapsed / total stocks for EACH region
+n_stock_assessments = collapse %>%
+  distinct(stockid, .keep_all=TRUE) %>%
+  group_by(region) %>%
+  summarize(n_stocks_per_region = n())
+
+collapse_ts = collapse_yr %>%
+  left_join(n_stock_assessments) %>%
+  group_by(region, n_stocks_per_region) %>%
+  count(first_collapse_yr) %>%
+  mutate(cum_first_collapse_yr = cumsum(n),
+         ratio_ever_collapsed = cum_first_collapse_yr/n_stocks_per_region)
+
+ggplot(data = collapse_ts, aes(x=first_collapse_yr, y=ratio_ever_collapsed)) +
+  geom_line() +
+  facet_wrap(~region)
+```
+
+***
+
+### Exercise 3.1
+
+Try running the same poisson model predicting the number of years that a stock is collapsed as a function of the ratio of overfished years and the ratio of low stock years. This time, only include data from the US East Coast. Test the poisson model to see if overdispersion is an issue. If it is a problem, refit the model as a quasipoisson. Do you think there is an advantage or a disadvantage to  breaking the data into distinct regions?
+
+```{r}
+unique(collapse_summary_zero_trunc$region)
+# Get subset of data on US East Coast
+east_coast_collapse = collapse_summary_zero_trunc %>% filter(region=="US East Coast")
+
+# Fit the poisson model
+model_p_us = glm(yrs_collapsed ~ ratio_yrs_overfished + ratio_yrs_low_stock , offset(log(yrs_data)), data=east_coast_collapse, family="poisson") 
+summary(model_p_us)
+
+# Is there overdispersion?
+AER::dispersiontest(model_p_us)$p.value < 0.05 # TRUE = overdispersed; FALSE = NOT overdispersed
+```
+
+When you model the US East Coast data on their own, you don't have a problem with overdisperion and both ratio_yrs_overfished and ratio_yrs_low_stock are significant explanatory variables. Strangely, while the ratio of low stock years has the stronger impact, the ratio of overfished years is significant and negative. So when a stock is more chronically overfished, it doesn't stay collapsed as long! I wonder what stocks might be robust to overfishing in the US East Coast and why?
+
+***
