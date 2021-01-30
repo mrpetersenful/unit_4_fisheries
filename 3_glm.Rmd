@@ -32,9 +32,7 @@ source('build_collapse_table.R')
 
 ### Logistic regression
 
-What features of a stock make it more (or less) likely to experience a collapse? I find this question fascinating, and I'd love to model the chance of collapse as a function of habitat type, geographic region, primary country that fishes that stock, fishing methods and age at sexual maturity. Unfortunately, the RAM data doesn't have a lot of that background info for most stocks (see bioparams table). We do consistently have `region`, i.e. the geographical location of the stock, so let's see if `region` is a significant explanatory variable for predicting the stock's collapse. 
-
-Since collapse is a yes/no, TRUE/FALSE, 0/1, binomial type of variable, we should use logistic regression.
+Logistic regression is used to model a binary dependent variable or a dependent variable that is bound between 0 and 1:
 
 ![](doc/logistic_regression.jpg){width=50%}
 
@@ -42,6 +40,11 @@ Logistic regression can be fit with the `glm()` function using the `binomial` li
 
 Logistic regression does not require model residuals to be normally distributed or variance to be constant. AIC can be used for model comparison, i.e. to determine whether the inclusion of an additional independent variable constitutes a significantly improved model. McFadden's Pseudo-$R^2$ can be used to assess fitness, where McFadden claims that a Pseudo-$R^2$ between 0.2 and 0.4 represents an "excellent fit". 
 
+#### Which stocks have experienced a collapse?
+
+What features of a stock make it more (or less) likely to experience a collapse? I find this question fascinating, and I'd love to model the chance of collapse as a function of habitat type, geographic region, primary country that fishes that stock, fishing methods and age at sexual maturity. Unfortunately, the RAM data doesn't have a lot of that background info for most stocks (see bioparams table). We do consistently have `region`, i.e. the geographical location of the stock, so let's see if `region` is a significant explanatory variable for predicting the stock's collapse. 
+
+Since collapse is a yes/no, TRUE/FALSE, 0/1, binomial type of variable, we should use logistic regression.
 
 ```{r}
 # Remove time series information and collapse data to "has this stock EVER collapsed?"
@@ -168,62 +171,6 @@ The final `model_qp` shows that the number of years that a stock is overfished d
 Try running the same poisson model predicting the number of years that a stock is collapsed as a function of the ratio of overfished years and the ratio of low stock years. This time, only include data from the US East Coast. Test the poisson model to see if overdispersion is an issue. If it is a problem, refit the model as a quasipoisson. Do you think there is an advantage or a disadvantage to  breaking the data into distinct regions?
 
 ***
-
-
-## EXTRA
-
-```{r}
-
-# U is fishing pressure (often fishing mortalities) and B is biomass
-# U / U_MSY and B / B_MSY
-u_dat = timeseries_values_views %>% 
-  left_join(stock, by=c("stockid","stocklong")) %>%
-  filter(!is.na(UdivUmsypref)) %>%
-  filter(!is.na(BdivBmsypref))
-
-# frequency of overfishing by region
-overfished_count_by_region = u_dat %>%
-  filter(year>=1950) %>%
-  group_by(year, region) %>%
-  summarize(n_stocks = n(), 
-            overfished = sum(UdivUmsypref>1),   # Fishing pressure (U) > U_MSY
-            underfished = sum(UdivUmsypref<=1), # Fishing pressure (U) <= U_MSY
-            healthy_stock = sum(BdivBmsypref>=1),# Biomass (B) >= B_MSY
-            unhealthy_stock = sum(BdivBmsypref<1))
-
-ggplot() +
-  geom_line(aes(x=year, y=overfished/n_stocks), data=overfished_count_by_region) +
-  facet_wrap(~region)
-
-
-### Bioparam data
-# There are 828 unique stockid in bioparams, but only 61 trophic levels and only 298 habitats
-length(unique(bioparams$stockid))
-dim(bioparams %>% filter(bioid=="Habitat-Habitat"))
-dim(bioparams %>% filter(bioid=="Trophiclevel-value"))
-
-# Which bioparams show up most frequently across the different stocks?
-bioparam_count = bioparams %>% group_by(bioid) %>% summarize(n=n()) %>% arrange(desc(n))
-bioparam_count
-
-# The habitat data is a mess
-bioparams %>% 
-  filter(bioid=="Habitat-Habitat") %>% 
-  group_by(biovalue) %>%
-  summarize(n = n())
-
-# Clean it up
-habitat_data = bioparams %>% 
-  filter(bioid=="Habitat-Habitat") %>% 
-  mutate(habitat = tolower(biovalue),
-         habitat = ifelse(grepl( "demersal", habitat, fixed = TRUE),"demersal", habitat),
-         habitat = ifelse(grepl( "pelagic", habitat, fixed = TRUE),"pelagic", habitat)) %>%
-  filter(habitat %in% c("demersal", "pelagic")) %>%
-  distinct(stockid, habitat)
-
-```
-
-
 
 ### More Information
 
