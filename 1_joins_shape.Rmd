@@ -11,9 +11,6 @@ knitr::opts_chunk$set(fig.width=6, fig.asp = 0.618, collapse=TRUE)
 #### New functions: left_join(), right_join(), inner_join(), full_join(), semi_join(), anti_join(), gather(), spread()
 
 ***
-https://statisticsglobe.com/r-dplyr-join-inner-left-right-full-semi-anti
-
-***
 
 ### Fisheries relational database
 
@@ -145,9 +142,9 @@ Let's imagine you had a month of scuba survey data where each row was a differen
 
 ***
 
-### Gather and spread
+### Switching between long and wide data frames
 
-The functions gather() and spread() in dplyr are used to change the shape of a table from wide to long and from long to wide. This can be an important step for preparing your data for specific types of analysis. For example, a lot of PCA / EOF / nmds analysis packages require data to be in a wide format where different types of observations have their own rows. However, many of ggplot's really slick features work best when data is in a long format. 
+The functions `pivot_longer()` and `pivot_wider()` (formally called `gather()` and `spread()`) in `dplyr` are used to change the shape of a table from wide to long and from long to wide. This can be an important step for preparing your data for specific types of analysis. For example, a lot of PCA / EOF / nmds analysis packages require data to be in a wide format where different types of observations have their own columns However, many of ggplot's really slick features work best when data is in a long format. 
 
 To look at these two functions, we'll create some more example data. Let's pretend you are counting invertebrates that fall inside of a quadrat in the intertidal. Your data might look like this:
 
@@ -158,19 +155,19 @@ survey = data.frame(quadrat_id = c(101, 102, 103, 104),
                     mussel_n = c(0, 1, 1, 4))
 ```
 
-This is the "wide" format, because each type of observation has its own column. The `gather()` function is used to convert this data to the long format. You will select a subset of columns to stack on top of each other, and the `key` parameter will become the name of the column that contains the old column names. The `value` parameter will be the name of the column that contains the elements associated with each former column.
+This is the "wide" format, because each type of observation has its own column. The `pivot_longer()` function is used to convert this data to the long format. You will select a subset of columns to stack on top of each other. Set the `names_to` parameter to the name of the column that contains the old column names. Set the `values_to` parameter to the name of the column that contains the elements associated with each former column. Note that the columns that are not selected in `pivot_longer()` will be retained, and their values will be repeated.
 
 ```{r}
 long = survey %>% 
-  gather("barnacle_n", "chiton_n", "mussel_n", key="taxon", value="counts")
+  pivot_longer(c("barnacle_n", "chiton_n", "mussel_n"), names_to="taxon", values_to="counts")
 head(long)
 ```
 
-Then we can take long data and convert it to wide data for analysis with the `spread()` function. This time, identify the `key` column that will become column names and the `value` column that holds the data that will fill each new column. 
+Then we can take long data and convert it to wide data for analysis with the `pivot_wider()` function. This time, identify the `key` column that will become column names and the `value` column that holds the data that will fill each new column. 
 
 ```{r}
 wide = long %>%
-  spread(key="taxon", value="counts")
+  pivot_wider(names_from=taxon, values_from=counts)
 head(wide)
 ```
 

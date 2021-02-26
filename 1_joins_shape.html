@@ -383,8 +383,6 @@ summary {
 <div id="new-functions-left_join-right_join-inner_join-full_join-semi_join-anti_join-gather-spread" class="section level4">
 <h4>New functions: left_join(), right_join(), inner_join(), full_join(), semi_join(), anti_join(), gather(), spread()</h4>
 <hr />
-<p><a href="https://statisticsglobe.com/r-dplyr-join-inner-left-right-full-semi-anti" class="uri">https://statisticsglobe.com/r-dplyr-join-inner-left-right-full-semi-anti</a></p>
-<hr />
 </div>
 </div>
 <div id="fisheries-relational-database" class="section level3">
@@ -500,30 +498,34 @@ data12_anti
 <p>Let’s imagine you had a month of scuba survey data where each row was a different fish that was observed on a rocky reef. The fish survey data includes the fish’s common name, size, date, reef site and observation ID. Then you have a second data frame that has encylopedia-type data downloaded from fishbase.org with common name, genus, species, trophic level and maximum length. If your goal was to add the genus and species information to your survey data, what join would you use? What would happen if there were multiple rows of in your fishbase data frame corresponding to the same common name (perhaps one row included a max length estimate pulled from Miller et al. and another row included a max length pulled from Garcia et al.)? Could that mess up your scuba survey analysis?</p>
 <hr />
 </div>
-<div id="gather-and-spread" class="section level3">
-<h3>Gather and spread</h3>
-<p>The functions gather() and spread() in dplyr are used to change the shape of a table from wide to long and from long to wide. This can be an important step for preparing your data for specific types of analysis. For example, a lot of PCA / EOF / nmds analysis packages require data to be in a wide format where different types of observations have their own rows. However, many of ggplot’s really slick features work best when data is in a long format.</p>
+<div id="switching-between-long-and-wide-data-frames" class="section level3">
+<h3>Switching between long and wide data frames</h3>
+<p>The functions <code>pivot_longer()</code> and <code>pivot_wider()</code> (formally called <code>gather()</code> and <code>spread()</code>) in <code>dplyr</code> are used to change the shape of a table from wide to long and from long to wide. This can be an important step for preparing your data for specific types of analysis. For example, a lot of PCA / EOF / nmds analysis packages require data to be in a wide format where different types of observations have their own columns However, many of ggplot’s really slick features work best when data is in a long format.</p>
 <p>To look at these two functions, we’ll create some more example data. Let’s pretend you are counting invertebrates that fall inside of a quadrat in the intertidal. Your data might look like this:</p>
 <pre class="r"><code>survey = data.frame(quadrat_id = c(101, 102, 103, 104),
                     barnacle_n = c(2, 11, 8, 27),
                     chiton_n = c(1, 0, 0, 2),
                     mussel_n = c(0, 1, 1, 4))</code></pre>
-<p>This is the “wide” format, because each type of observation has its own column. The <code>gather()</code> function is used to convert this data to the long format. You will select a subset of columns to stack on top of each other, and the <code>key</code> parameter will become the name of the column that contains the old column names. The <code>value</code> parameter will be the name of the column that contains the elements associated with each former column.</p>
+<p>This is the “wide” format, because each type of observation has its own column. The <code>pivot_longer()</code> function is used to convert this data to the long format. You will select a subset of columns to stack on top of each other. Set the <code>names_to</code> parameter to the name of the column that contains the old column names. Set the <code>values_to</code> parameter to the name of the column that contains the elements associated with each former column. Note that the columns that are not selected in <code>pivot_longer()</code> will be retained, and their values will be repeated.</p>
 <pre class="r"><code>long = survey %&gt;% 
-  gather(&quot;barnacle_n&quot;, &quot;chiton_n&quot;, &quot;mussel_n&quot;, key=&quot;taxon&quot;, value=&quot;counts&quot;)
+  pivot_longer(c(&quot;barnacle_n&quot;, &quot;chiton_n&quot;, &quot;mussel_n&quot;), names_to=&quot;taxon&quot;, values_to=&quot;counts&quot;)
 head(long)
-##   quadrat_id      taxon counts
+## # A tibble: 6 x 3
+##   quadrat_id taxon      counts
+##        &lt;dbl&gt; &lt;chr&gt;       &lt;dbl&gt;
 ## 1        101 barnacle_n      2
-## 2        102 barnacle_n     11
-## 3        103 barnacle_n      8
-## 4        104 barnacle_n     27
-## 5        101   chiton_n      1
-## 6        102   chiton_n      0</code></pre>
-<p>Then we can take long data and convert it to wide data for analysis with the <code>spread()</code> function. This time, identify the <code>key</code> column that will become column names and the <code>value</code> column that holds the data that will fill each new column.</p>
+## 2        101 chiton_n        1
+## 3        101 mussel_n        0
+## 4        102 barnacle_n     11
+## 5        102 chiton_n        0
+## 6        102 mussel_n        1</code></pre>
+<p>Then we can take long data and convert it to wide data for analysis with the <code>pivot_wider()</code> function. This time, identify the <code>key</code> column that will become column names and the <code>value</code> column that holds the data that will fill each new column.</p>
 <pre class="r"><code>wide = long %&gt;%
-  spread(key=&quot;taxon&quot;, value=&quot;counts&quot;)
+  pivot_wider(names_from=taxon, values_from=counts)
 head(wide)
+## # A tibble: 4 x 4
 ##   quadrat_id barnacle_n chiton_n mussel_n
+##        &lt;dbl&gt;      &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;
 ## 1        101          2        1        0
 ## 2        102         11        0        1
 ## 3        103          8        0        1
