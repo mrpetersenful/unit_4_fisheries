@@ -13,7 +13,7 @@ knitr::opts_chunk$set(fig.width=6, fig.asp = 0.618, collapse=TRUE)
 
 ### Exercise 1.1
 
-Let's imagine you had a month of scuba survey data where each row was a different fish that was observed on a rocky reef. The fish survey data includes the fish's common name, size, date, reef site and observation ID. Then you have a second data frame that has encylopedia-type data downloaded from fishbase.org with common name, genus, species, trophic level and maximum length. If your goal was to add the genus and species information to your survey data, what join would you use? What would happen if there were multiple rows of in your fishbase data frame corresponding to the same common name (perhaps one row included a max length estimate pulled from Miller et al. and another row included a max length pulled from Garcia et al.)? Could that mess up your scuba survey analysis?
+Let’s imagine you had a month of scuba survey data where each row was a different fish that was observed on a rocky reef. The fish survey data includes the fish’s common name, size, date, reef site and observation ID. Then you have a second data frame that has encylopedia-type data downloaded from fishbase.org with common name, genus, species, trophic level and maximum length. If your goal was to add the genus and species information to your survey data and then count the total number of each species observed at a reef, what join would you use? What variable would you join the data frames by? What would happen if there were multiple rows in your fishbase data frame corresponding to the same common name (perhaps one row included a max length estimate pulled from Miller et al. and another row included a max length pulled from Garcia et al.)? Could that mess up your scuba survey analysis?
 
 ANSWER: I would use `left_join(survey_data, fish_base_data, by="common_name")` so that I retain all of my survey data and add in the fish base data wherever it is available. Then I would use dim() to compare the number of rows in my survey data before and after the join. If my merged data was longer, I would either: 
 
@@ -28,7 +28,7 @@ When the invertebrate survey is in the orignial (wide) format, use ggplot to cre
 
 If you wanted to build a linear model to predict the number of barnacles in a quadrat as a function of the number of other invertebrates that were found in the quadrat (i.e. chitons and mussels), what table shape would you need, long or wide?  ### WIDE ###
 
-```{r}
+```{r, eval=FALSE}
 # We need to write a new geom_point() line for each x/y combo (i.e. each species)
 ggplot(data=survey) +
   geom_point(aes(x=quadrat_id, y=barnacle_n), color='red' ) +
@@ -46,7 +46,7 @@ ggplot(aes(x=quadrat_id, y=counts, color=taxon), data=long) +
 
 Create the same time series that shows the # of stocks that have collapsed (historically) divided by the total number of stocks that are tracked in the dataset. However, show this plot separately for EACH region. You may need to create a new data frame that counts the number of stocks tracked in each region, then join that new data frame to the collapse_ts data frame to calculate your ratios.
 
-```{r}
+```{r, eval=FALSE}
 # Create a time series of # of stocks ever collapsed / total stocks for EACH region
 n_stock_assessments = collapse %>%
   distinct(stockid, .keep_all=TRUE) %>%
@@ -71,7 +71,7 @@ ggplot(data = collapse_ts, aes(x=first_collapse_yr, y=ratio_ever_collapsed)) +
 
 Try running the same poisson model predicting the number of years that a stock is collapsed as a function of the ratio of overfished years and the ratio of low stock years. This time, only include data from the US East Coast. Test the poisson model to see if overdispersion is an issue. If it is a problem, refit the model as a quasipoisson. Do you think there is an advantage or a disadvantage to  breaking the data into distinct regions?
 
-```{r}
+```{r, eval=FALSE}
 unique(collapse_summary_zero_trunc$region)
 # Get subset of data on US East Coast
 east_coast_collapse = collapse_summary_zero_trunc %>% filter(region=="US East Coast")
