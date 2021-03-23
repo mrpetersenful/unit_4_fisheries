@@ -57,9 +57,10 @@ Since collapse is a yes/no, TRUE/FALSE, 0/1, binomial type of variable, we shoul
 ```{r}
 # Remove time series information and collapse data to "has this stock EVER collapsed?"
 model_data = collapse %>%
-  group_by(stockid, stocklong, region) %>%
-  summarize(ever_collapsed = any(ever_collapsed)) %>%
-  ungroup()
+  group_by(stockid) %>%
+  summarize(ever_collapsed = any(current_collapse)) %>%
+  ungroup() %>%
+  left_join(stock)
 head(model_data)
 summary(model_data)
 
@@ -71,7 +72,7 @@ summary(model_l)
 model_data %>% distinct(region) %>% arrange(region)
 ```
 
-We have statistically significant, negative coefficients for the Mediterranean-Black Sea stocks and the West Africa stocks - meaning these stocks are less likely to collapse than the reference region, which is the Atlantic Ocean. The Canada East and West Coast stock groups are almost significant at $\alpha = 0.05$, and since those coefficients are positive that indicates that stocks are more likely to collapse than stocks in the Atlantic Ocean (the reference region). There are no examples of collapsed stocks in the Pacific Ocean and Indian Ocean regions.
+We have statistically significant, negative coefficients for the Mediterranean-Black Sea stocks and the West Africa stocks - meaning these stocks are less likely to collapse than the reference region, which is the Atlantic Ocean. There are no examples of collapsed stocks in the Pacific Ocean and Indian Ocean regions.
 
 To create the prediction plot, we use `predict.glm` and generate model predictions of a stock's probability of ever experiencing a collapse for every region in the dataset. We generate predictions with `type="response"` because we want our predictions to be on the scale of the response (y) variable. That means we want predictions between 0 and 1, using this equation:
 
@@ -129,10 +130,10 @@ We can use a poisson distribution to model the count of years that a stock spend
 # Calculate ratio of years a stock is overfished (U/U_MSY > 1) 
 # and ratio of years stock biomass is too low (B / B_MSY < 1) 
 u_summary = timeseries_values_views %>% 
-  left_join(stock, by=c("stockid","stocklong")) %>%
+  #left_join(stock, by=c("stockid","stocklong")) %>%
   filter(!is.na(UdivUmsypref),
          !is.na(BdivBmsypref)) %>%
-  group_by(stockid) %>%
+  group_by(stockid, stocklong) %>%
   summarize(yrs_data = n(),
             ratio_yrs_overfished = sum(UdivUmsypref > 1)/yrs_data,
             ratio_yrs_low_stock = sum(BdivBmsypref < 1)/yrs_data) %>%
@@ -140,7 +141,7 @@ u_summary = timeseries_values_views %>%
 
 # Count num years each stock is collapsed; join with counts of overfished-years and low-stock-years
 collapse_summary = collapse %>%
-  group_by(stockid, stocklong, region) %>%
+  group_by(stockid) %>%
   summarize(yrs_data = n(),
             yrs_collapsed = sum(current_collapse)) %>%
   inner_join(u_summary, by="stockid") # only keep stocks that have collapse data AND u_summary data

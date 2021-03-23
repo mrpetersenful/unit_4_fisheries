@@ -22,7 +22,7 @@ ANSWER: I would use `left_join(survey_data, fish_base_data, by="common_name")` s
 
 ***
 
-Exercise 1.2
+### Exercise 1.2
 
 When the invertebrate survey is in the orignial (wide) format, use ggplot to create a scatter plot where the quadrat_id is along the x-axis and the count data is along the y-axis. Give each different taxon a different point color. Now create the same exact plot using the survey data in the long format.
 
@@ -58,9 +58,9 @@ collapse_ts = collapse_yr %>%
   group_by(region, n_stocks_per_region) %>%
   count(first_collapse_yr) %>%
   mutate(cum_first_collapse_yr = cumsum(n),
-         ratio_ever_collapsed = cum_first_collapse_yr/n_stocks_per_region)
+         ratio_collapsed_yet = cum_first_collapse_yr/n_stocks_per_region)
 
-ggplot(data = collapse_ts, aes(x=first_collapse_yr, y=ratio_ever_collapsed)) +
+ggplot(data = collapse_ts, aes(x=first_collapse_yr, y=ratio_collapsed_yet)) +
   geom_line() +
   facet_wrap(~region)
 ```
@@ -69,21 +69,40 @@ ggplot(data = collapse_ts, aes(x=first_collapse_yr, y=ratio_ever_collapsed)) +
 
 ### Exercise 3.1
 
-Try running the same poisson model predicting the number of years that a stock is collapsed as a function of the ratio of overfished years and the ratio of low stock years. This time, only include data from the US East Coast. Test the poisson model to see if overdispersion is an issue. If it is a problem, refit the model as a quasipoisson. Do you think there is an advantage or a disadvantage to  breaking the data into distinct regions?
+Try running the same poisson model predicting the number of years that a stock is collapsed as a function of the ratio of overfished years and the ratio of low stock years. This time, only include data from the Atlantic Ocean region. Test the poisson model to see if overdispersion is an issue. If it is a problem, refit the model as a quasipoisson. What are some advantages and disadvantages to  breaking the data into distinct regions?
 
 ```{r, eval=FALSE}
-unique(collapse_summary_zero_trunc$region)
+table(collapse_summary_zero_trunc_region$region)
 # Get subset of data on US East Coast
-east_coast_collapse = collapse_summary_zero_trunc %>% filter(region=="US East Coast")
+collapse_summary_zero_trunc_region = collapse_summary_zero_trunc %>%
+  left_join(stock %>% select(stockid, region))
+
+# region=="Atlantic Ocean"
+atlantic_collapse = collapse_summary_zero_trunc_region %>% filter(region=="Atlantic Ocean")
 
 # Fit the poisson model
-model_p_us = glm(yrs_collapsed ~ ratio_yrs_overfished + ratio_yrs_low_stock , offset(log(yrs_data)), data=east_coast_collapse, family="poisson") 
-summary(model_p_us)
+model_p_atl = glm(yrs_collapsed ~ ratio_yrs_overfished + ratio_yrs_low_stock , offset(log(yrs_data)), data=atlantic_collapse, family="poisson") 
+summary(model_p_atl)
 
 # Is there overdispersion?
-AER::dispersiontest(model_p_us)$p.value < 0.05 # TRUE = overdispersed; FALSE = NOT overdispersed
+AER::dispersiontest(model_p_atl)$p.value < 0.05 # TRUE = overdispersed; FALSE = NOT overdispersed
+
+newdata = data.frame(ratio_yrs_overfished = seq(from=0,to=1,by=0.1),
+                     ratio_yrs_low_stock = median(atlantic_collapse$ratio_yrs_low_stock))
+model_p_atl_predict = predict(model_p_atl, type="response", newdata = newdata, se.fit=TRUE)
+
+# Organize predictions into a tidy table
+predictions = cbind(newdata, model_p_atl_predict)
+
+# Plot predictions and SE ribbon
+ggplot() +
+  geom_line(aes(x=ratio_yrs_overfished, y=fit), data=predictions) +
+  geom_ribbon( aes(x=ratio_yrs_overfished, ymin = fit-se.fit, ymax = fit+se.fit), fill="darkgrey", alpha = .5, data=predictions) +
+  geom_point(aes(x=ratio_yrs_overfished, y=yrs_collapsed), data=atlantic_collapse) +
+  ylab("# years stock was collapsed") +
+  theme_bw()
 ```
 
-When you model the US East Coast data on their own, you don't have a problem with overdisperion and both ratio_yrs_overfished and ratio_yrs_low_stock are significant explanatory variables. Strangely, while the ratio of low stock years has the stronger impact, the ratio of overfished years is significant and negative. So when a stock is more chronically overfished, it doesn't stay collapsed as long! I wonder what stocks might be robust to overfishing in the US East Coast and why?
+When you model the Atlantic Ocean stock data on their own, you don't have a problem with overdisperion and ratio_yrs_overfished is a significant explanatory variable. When a stock is more chronically overfished, it spends more time in the collapsed state. Notably, there are only 
 
 ***
