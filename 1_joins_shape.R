@@ -158,17 +158,47 @@ data12_anti
 ###    function. 
 
 
-## -----------------------------------------------------------------------------------------
+### Switching between long and wide data frames
+
+## The functions pivot_longer() and pivot_wider() (formally called gather()
+## and spread()) in dplyr are used to change the shape of a table from wide 
+## to long and from long to wide. This can be an important step for preparing 
+## your data for specific types of analysis. For example, a lot of PCA/
+## EOF/nmds analysis packages require data to be in a wide format where 
+## diferent types of observations have their own columns. However, many of 
+## ggplot's really slick features work best when data is in a long format.
+
+## To look at these two functions, we'll create some more example data. 
+## Let's pretend we're counting invertebrates that fall inside of a quadrat
+## in the intertidal. Your data might look like this:
+
 survey = data.frame(quadrat_id = c(101, 102, 103, 104),
                     barnacle_n = c(2, 11, 8, 27),
                     chiton_n = c(1, 0, 0, 2),
                     mussel_n = c(0, 1, 1, 4))
+summary(survey)
+## This is the "wide" format, because each type of observation has its own
+## column. The pivot_longer() function is used to convert this data to the 
+## long format. You'll select a subset of columns to stack on top of each
+## other. Set the names_to parameter to the name of the column that contains 
+## the old column names. Set the values_to parameter to the name of the 
+## column that contains the elements associated with each former column.
+## Note that the columns that are not selected in pivot_longer() will be 
+## retained, and their values will be repeated. 
 
 
-## -----------------------------------------------------------------------------------------
+
 long = survey %>% 
-  pivot_longer(c("barnacle_n", "chiton_n", "mussel_n"), names_to="taxon", values_to="counts")
+  pivot_longer(c("barnacle_n", "chiton_n", "mussel_n"), names_to="taxon", 
+               values_to="counts")
 head(long)
+## So this move expanded the 101 quadrat id column to make a new row for 
+## each taxon (old column) -- the column from the old table that had the 
+## differences were the counts, so that's what we set the values_to thing
+## equal to. 
+
+## Then we can take long data and convert it to wide data for analysis with
+## the pivot_wider() 
 
 
 ## -----------------------------------------------------------------------------------------
