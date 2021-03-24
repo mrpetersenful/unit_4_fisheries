@@ -2,18 +2,66 @@
 ## 4.1: Joins in R
 
 
-## ---- message=FALSE-----------------------------------------------------------------------
+## In this module, we're looking at fisheries stock assessment data and 
+## identifying collapsed fisheries. We're going to use the RAM Legacy 
+## Database, a massive dataset of fisheries metrics across the globe. 
+
+## The RAM database has over 50 tables with a range of sizs and shapes, 
+## we'll be using several of them. The chief table we're utilizing has 
+## more than 1 million rows. Each of the tables are connected by a series 
+## of IDs that can be used to merge data appropriately. To manage this 
+## massive relational database, we'll first get comfortable with join 
+## functions in dplyr. 
+
+## There's a good cheatsheet that goes over joins and other data shaping 
+## functions: in the top RStudio menu, go to Help, Cheatsheets, Data 
+## Transformation with dplyr. 
+
+## Here we're going to learn how to merge data with the join functions of
+## the dplyr package. There are 2 types of joins:
+#### - Mutating joins add new variables to one table from matching 
+####   observations in another table
+#### - Filtering joins filter observations from one table based on whether
+####   or not they match an observation in the other table. 
+
+## dplyr join functions: 
+#### - Mutating joins:
+####   -- left_join: Join matching rows from data_2 to data_1
+####   -- right_join: Join matching rows from data_1 to data_2
+####   -- inner_join: Join data. Retain only rows in both sets.
+####   -- full_join: Join data. Retain all values, all rows. 
+#### - Filtering joins: 
+####   -- semi_join: Return all rows in data_1 that have a match in data_2.
+####   -- anti_join: Return all rows in data_1 that do not have a match in
+####        data_2.
+
+## We're going to look at these different types of joins using very simple
+## example data. 
+
 library(tidyverse)
-data1 <- data.frame(ID = 1:2,                      # Create first example data frame
+## Create first example data frame
+data1 <- data.frame(ID = 1:2,                      
                     X1 = c("a1", "a2"),
                     stringsAsFactors = FALSE)
-data2 <- data.frame(ID = 2:3,                      # Create second example data frame
+## Create second example data frame
+data2 <- data.frame(ID = 2:3,                      
                     X2 = c("b1", "b2"),
                     stringsAsFactors = FALSE)
 
+## Both data frames contain two columns: the ID and one variable. Note that
+## both data frames have the ID No. 2 in common. On the bottom row of the
+## figure you can see how each of the join functions merges our two 
+## example data frames. 
 
-## -----------------------------------------------------------------------------------------
-# 3 equivalent ways to perform the left_join():
+### Left joins/right joins:
+## This is the join used most frequently by Erin. The left_join() returns
+## all rows from data1 and all columns from data1 and data2. Rows in data1
+## with no match in data2 will have NA values in the new columns. If there 
+## are multiple matches between data1 and data2, all combinations of the 
+## matches are returned. If the joining variable links your two data frames, 
+## you don't need to explicitly identify what that joining variable is. 
+
+## 3 equivalent ways to perform the left_join():
 
 # Without specifying the joining variable:
 data12_left = left_join(data1, data2)
@@ -23,31 +71,91 @@ data12_left = left_join(data1, data2, by="ID")
 data12_left = data1 %>%
   left_join(data2, by="ID")
 data12_left
+## In our example new data table, data1 has only rows 1 and 2, where data2
+## has rows 2 and 3. We only keep the rows from data1, although all of the
+## columns are added from data2. 
 
+## The function right_join() is equivalnt to left_join() but reverses the 
+## order of the 2 data frames (i.e., all of the rows in the "right" or 
+## second data frame are preserved). 
 
+### Inner join:
+## The function inner_join() returns all rows from data1 where there are 
+## matching values in data2, and all columns from data1 and data2. If there
+## are multiple matches between data1 and data2, all combinations of the
+## matches are returned. 
 
-## -----------------------------------------------------------------------------------------
 data12_inner = data1 %>%
   inner_join(data2, by="ID")
 data12_inner
+## This returned row 2 (because it's present in both data1 and data2), and
+## all columns from both data1 and data2.
 
 
-## -----------------------------------------------------------------------------------------
+### Full join: 
+## The function full_join() returns all rows and columns from both data1 
+## and data2. The function returns NA for any missing values. 
+
 data12_inner = data1 %>%
   full_join(data2, by="ID")
 data12_inner
 
 
-## -----------------------------------------------------------------------------------------
+### Semi join: 
+## The function semi_join() is a filtering function, so no new columns are
+## created in data1, but rows are removed from data1. semi_join() returns
+## all rows from data1 where there are matching values in data2, but only
+## keeps the columns in data1. A semi join will never duplicate rows of
+## data1, even if there is more than one matching row in data2. 
+
 data12_semi = data1 %>%
   semi_join(data2, by="ID")
 data12_semi
 
+### Anti join:
+## The anti_join() function returns all rows from data1 where there are 
+## NOT matching values in data2, keeping just the columns from data1. 
 
-## -----------------------------------------------------------------------------------------
 data12_anti = data1 %>%
   anti_join(data2, by="ID")
 data12_anti
+
+#### WORDS OF WISDOM:
+## Whenever a join function is used, you should ALWAYS check the dimensions
+## using dim() of the data frames before and after the joins to make sure
+## you understand what rows and columns were added. You can also use the
+## summary() function, or use filter() combined with is.na() to check for 
+## NAs so that you have a good sense of what data are missing after a join.
+
+## Exercise 1.1
+## Imagine you had a month of scuba survey data where each row was a different
+## fish that was observed on a rocky reef. The fish suvey data includes 
+## the fish's common name, size, date, reef site and observation ID. Then
+## you have a second data frame that has encyclopedia-type data downloaded
+## from fishbase.org with common name, genus, species, trophic level, and
+## maximum length. 
+
+## If your goal was to add the genus and species information to your survey
+## data, what join would you use? 
+### I would use left_join to add in all of the encyclopedia data but retain 
+### only the rows from my survey data. 
+# left_join(survey_data, fish_base_data, by="common_name")
+### I would make sure to check dim() of my survey data to make sure that
+### I didn't add or remove rows to my survey data after the join. 
+
+## What would happen if there were multiple rows in your fishbase data frame 
+## corresponding to the same common name (perhaps one row included a max
+## length estimate pulled from Miller et al. and another row included a
+## max length estimate pulled from Garcia et al.)? Could that mess up your
+## scuba survey analysis?
+### If there were more rows, I would either:
+### 1) comb through the fish base data frame and remove the duplicate rows
+###    based on which max length study was more relevant to my analysis.
+### 2) If I only wanted the genus and species info anyways, I would use
+###    distinct(observation_id) to remove duplicate rows of observations
+###    -- then I would check again to make sure that the number of rows in
+###    my survey data frame is equal to the number of rows before the join
+###    function. 
 
 
 ## -----------------------------------------------------------------------------------------
