@@ -1,3 +1,7 @@
+## 22 March 2021
+## 4.3: glm
+
+
 ## ----setup, include=FALSE-----------------------------------------------------------------
 knitr::opts_chunk$set(fig.width=6, fig.asp = 0.618, collapse=TRUE) 
 
