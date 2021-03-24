@@ -198,11 +198,39 @@ head(long)
 ## equal to. 
 
 ## Then we can take long data and convert it to wide data for analysis with
-## the pivot_wider() 
+## the pivot_wider() function. This time, identify the key column that will 
+## become column names and the value column that holds the data that will fill
+## each new column. 
 
-
-## -----------------------------------------------------------------------------------------
 wide = long %>%
   pivot_wider(names_from=taxon, values_from=counts)
 head(wide)
+## In this data frame, the rows that we wanted to turn into columns was named
+## the taxon column, and the counts column were filled into the cells.
+
+
+## Exercise 1.2: 
+## When the invertebrate survey is in the original (wide) format, use ggplot 
+## to create a scatter plot where the quadrat_id is along the x-axis and the 
+## count data is along the y-axis. Give each different taxon a different 
+## point color. Now create the same exact plot using the survey data in the 
+## long format. 
+
+## If you wanted to build a linear model to predict the number of barnacles in
+## a quadrat as a function of the number of other invertebrates that were found
+## in the quadrat (i.e. chitons and mussels), what table shape would you need, 
+## long or wide? 
+
+## Okay, so we need to build a geom_point() line for each x/y combo (i.e., each
+## species). 
+ggplot(data=survey) +
+  geom_point(aes(x=quadrat_id, y=barnacle_n), color='red') +
+  geom_point(aes(x=quadrat_id, y=chiton_n), color='green') +
+  geom_point(aes(x=quadrat_id, y=mussel_n), color='blue')
+
+## Now, look how easy it is to plot when the data is in the long format:
+ggplot(aes(x=quadrat_id, y=counts, color=taxon), data=long) +
+  geom_point()
+
+
 
