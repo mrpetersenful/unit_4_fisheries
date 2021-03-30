@@ -92,6 +92,8 @@ collapse_region_predictions = data.frame(region = regions,
                                          predictions = model_l_predict$fit,
                                          se = model_l_predict$se.fit)
 
+glimpse(collapse_region_predictions)
+
 ## Now I want to visualize it by plotting the predictions and standard error bars.
 ggplot(aes(x=region, y=predictions, fill=region), data=collapse_region_predictions) +
   ## Here is where I add in the bars. I'm using stat="identity" because I want the

@@ -332,4 +332,5 @@ ggplot(data = collapse_ts,
   facet_wrap(~region)
 
 
+dim(collapse)
 
