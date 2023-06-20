@@ -30,73 +30,37 @@ load('data/RAMLDB v4.491/DB Files With Assessment Data/R Data/DBdata[asmt][v4.49
 
 The RAM data is structured as a large relational database which contains many different tables of different sizes and shapes, and the tables are related to each other through a series of different ids. The database has over 50 tables and some tables have over 1 million rows. This data (and many other super valuable massive datasets just like this) is difficult to work with and maneuver at first. I'm going to show you what metadata files I used to get familiar with the database so that I could start this fisheries analysis. 
 
-From the `Database Quick Guide` document, we find out that the `biometrics` table describes all parameter types available in the `bioparams` table, and the `tsmetrics` table describes all time series types available in the `timeseries` table. Then if we look in the `Database Structure` document, there is a map that generally shows how the major types of tables are connected:
+From the `Database Quick Guide` document, we find out that the `biometrics` table describes all parameter types available in the `bioparams` table, and the `tsmetrics` table describes all time series types available in the `timeseries` table. A simple version of the most commonly used fisheries metrics by stock and by year is available in `timeseries_values_views`. Then if we look in the `Database Structure` document, there is a map that generally shows how the major types of tables are connected:
 
 ![](doc/RAM_database_structure.png){width=50%}
 
 
-Looking deeper in the `Database Structure` document, there is a table called "Table Linkages" that lists which IDs can be used to link the different tables. For example, to link `tsmetrics` with `timeseries`, we must set `tsunique` to match `tsid`. In other cases, the ID that links tables has the same name. For example, both the `timeseries` table and `stock` table have a common ID called `stockid`. 
+Looking deeper in the `Database Structure` document, there is a table called "Table Linkages" that lists which IDs can be used to link the different tables. For example, both the `timeseries_values_views` table and `stock` table have a common ID called `stockid`. 
 
 The other good metadata file provided is called `Database Table Fields`. This is a spreadsheet that provides explanations for the variable names that represent the broad range of fishery metrics presented in this dataset. Now that we have glanced through the metadata, we can start a fisheries analysis.
 
 ### Annual total catch by stock
 
-We are going to look in the `timeseries` dataset for annual total catch for each fish stock. After exploring the `tsmetrics` table, I found the `tsid` TCbest-MT, which is the best available annual catch data (in metric tons). The actual data is all in `timeseries`, but if we join it with the `tsmetrics` and `stock` datasets then we can look at the metadata associated with the `timeseries` data.
-
-We reduce the data by removing stocks in the "Deprecated" state. We also limit each stock to just one assessment to avoid double counting fish. We choose to retain the assessment that runs for the longest time period for each stock.
+We are going to look in the `timeseries_values_views` dataset for annual total catch for each fish stock. The `TCbest` column is the best available annual total catch data (in metric tons). The actual data is all in `timeseries`, but the `timeseries` table may have multiple stock assessments for a given year, which complicates things. We'll stick with the simplified `timeseries_values_views` table. if we join it with the `stock` dataset then we can add more information about each stock, such as `scientificname` and `region`.
 
 ```{r, message=FALSE}
 library(tidyverse)
-library(AER) #dispersiontest
 ```
 
 ```{r}
 # Join timeseries, tsmetrics (time series metadata) and stock tables
-fish = timeseries %>%
-  left_join(stock, by=c("stockid","stocklong")) %>%
-  left_join(tsmetrics, by=c("tsid" = "tsunique")) 
+fish = timeseries_values_views %>%
+  left_join(stock, by=c("stockid","stocklong")) 
 glimpse(fish)
-
-# Status of the stock assessments
-unique(fish$state)
-
-# Find the best "total catch" metrics
-fish_catch = fish %>% 
-  filter(tsid == "TCbest-MT",  # Grab the best TotalCatch estimate (in metric tons)
-         state != "Deprecated") # Remove stocks that are deprecated
-
-# Some stocks in timeseries are subject to multiple assessments
-length(unique(fish_catch$assessid))
-length(unique(fish_catch$stockid))
-
-# for a given stock, calculate the time period of each assessment 
-# choose the assessment that covers the longest time series 
-# if multiple assessments cover the same long time period, only keep one
-fish_max_assess = fish_catch %>% 
-  group_by(stocklong, assessid) %>% # For a given stock and assessment
-  summarize(max_tsyear = max(tsyear), min_tsyear = min(tsyear)) %>%
-  mutate(assessment_length = max_tsyear - min_tsyear) %>%
-  ungroup() %>%
-  group_by(stocklong) %>%
-  filter(assessment_length == max(assessment_length)) %>% # keep longest assessment length
-  distinct(stocklong, .keep_all=TRUE) %>% # only keep first assessment with max assessment length
-  select(stocklong, assessid, assessment_length)
-
-# Histogram of stock assessment lengths
-hist(fish_max_assess$assessment_length)
-
-# use semi_join to filter out assessments in fish_catch that are NOT the longest assessment
-fish_catch_max_assess = fish_catch %>%
-  semi_join(fish_max_assess, by=c("stocklong", "assessid"))
 
 # This plot has LOTS of data - make sure you remove the legend !!
 ggplot() +
-  geom_line(aes(x=tsyear, y=tsvalue, color=stockid), data=fish_catch_max_assess) +
+  geom_line(aes(x=year, y=TCbest, color=stockid), data=fish) +
   theme(legend.position = "none") +
   ggsave('figures/total_catch_all_stocks.png', device="png", height=4, width=7, units="in")
 
 # Fishery with heighest annual catch
-fish_catch_max_assess %>% filter(tsvalue == max(tsvalue, na.rm=TRUE))
+glimpse( fish %>% arrange(desc(TCbest)) ) # what had the highest catch?
 ```
 
 ### Cod collapse
@@ -109,27 +73,31 @@ Let's isolate the cod stock assessments in East Coast Canada and add them togeth
 
 ```{r}
 # What regions have Atlantic cod stock assessments?
-cod_regions = fish_catch_max_assess %>% 
+cod = fish %>% 
   filter(scientificname == "Gadus morhua") %>%
   distinct(region)
 
 # Sum best Total Catch estimates for Cod across all Canada East Coast stock assessments       
-cod = fish_catch_max_assess %>% 
+cod = fish %>% 
   filter(scientificname == "Gadus morhua",
-         region == "Canada East Coast") %>%
-  group_by(tsyear) %>%
-  summarise(total_catch = sum(tsvalue, na.rm=TRUE)) 
+         region == "Canada East Coast", 
+         !is.na(TCbest)) %>%
+  group_by(year) %>%
+  summarise(total_catch = sum(TCbest)) 
 
 # Plot Canada East Coast cod total catch time series
-ggplot(aes(x=tsyear, y=total_catch), data=cod) + 
+ggplot(aes(x=year, y=total_catch), data=cod) + 
   geom_line() +
   labs(x= "Year", y= "Total Catch (Metric Tons)", 
        title = "Cod Total Catch in East Canadian Coast")
 ```
 
-A paper by Worm et al. (2006; see the readings directory) defines a fishery stock collapse as a decline in total catch to less than 10% of the maximum historical total catch. Did the Eastern Canadian cod stock "collapse" according to this definition? We'll use the `cummax()` function which returns the maximum value in all rows of a data frame previous to a particular row, to find the historical maximum (i.e. the max catch observed prior to each year within the analysis). We can identify the year the collapse occurred and add that to our time series plot.
+A paper by Boris Worm et al. (2006; see the readings directory) defines a fishery stock collapse as a decline in total catch to less than 10% of the maximum historical total catch. Did the Eastern Canadian cod stock "collapse" according to this definition? We'll use the `cummax()` function which returns the maximum value in all rows of a data frame previous to a particular row, to find the historical maximum (i.e. the max catch observed prior to each year within the analysis). We can identify the year the collapse occurred and add that to our time series plot.
 
 ```{r}
+dat = c(1,3,6,2,3,9,-1)
+cummax(dat) # Cummax() returns the cumulative maximum value
+
 # Find the historical max total catch for each year in the time series
 # Define collapse as a total catch <= 10% of the historical max catch
 # cummax() in row i provides the max value in rows 0 - i
@@ -140,14 +108,14 @@ cod_collapse = cod %>%
 # What year did the collapse happen?
 cod_collapse_year = cod_collapse %>% 
   filter(collapse==TRUE) %>% 
-  summarize(tsyear=min(tsyear)) %>% 
-  .$tsyear
+  summarize(year=min(year)) %>% 
+  .$year
 
 # Plot the catch time series and the collapse year
 ggplot() + 
-  geom_line(aes(y=total_catch, x=tsyear, color=collapse), data=cod_collapse) +
+  geom_line(aes(y=total_catch, x=year, color=collapse), data=cod_collapse) +
   geom_vline(xintercept = cod_collapse_year) + # Draws vertical line
-  scale_x_continuous(breaks=c(seq(0,2015,10))) + # Add more breaks on x axis
+  #scale_x_continuous(breaks=c(seq(0,2015,10))) + # Add more breaks on x axis
   xlab("Total catch (Mt)") + ylab("Year") + ggtitle("East Canada Cod")
 ```
 
@@ -157,33 +125,33 @@ Now that we have explored what a stock collapse looks like with cod in Eastern C
 
 ```{r}
 # Find all stocks that have collapsed
-collapse = fish_catch_max_assess %>% 
-  filter(!is.na(tsvalue)) %>%  # Remove NAs (which can't be ignored with cummax())
+collapse = fish %>% 
+  filter(!is.na(TCbest)) %>%  # Remove NAs (which can't be ignored with cummax())
   group_by(stocklong) %>%
-  mutate(historical_max_catch = cummax(tsvalue),
-         current_collapse = tsvalue < 0.10 * historical_max_catch,
-         ever_collapsed = cumsum(current_collapse) > 0) %>%
+  mutate(historical_max_catch = cummax(TCbest),
+         current_collapse = TCbest < 0.10 * historical_max_catch,
+         collapsed_yet = cumsum(current_collapse) > 0) %>%
   ungroup()
 
 # Find the year each stock collapsed for the first time
 collapse_yr = collapse %>%
   group_by(stockid, stocklong, region) %>% # really just groups by stockid, but retains region
-  filter(ever_collapsed == TRUE) %>%
-  summarize(first_collapse_yr = min(tsyear)) %>%
+  filter(collapsed_yet == TRUE) %>%
+  summarize(first_collapse_yr = min(year)) %>%
   ungroup()
 
 # Plot a histogram of first collapse year
 ggplot(data = collapse_yr, aes(x=first_collapse_yr)) +
-  geom_histogram(color="black", fill="white")
+  geom_histogram(color="black", fill="white", binwidth=5) # bin into 5-yr-intervals
 
 # Create a time series of # of stocks ever collapsed / total stocks
-n_stock_assessments = length(unique(collapse$stockid)) # Total number of unique stocks in our data
+n_stock_assessments = length(unique(collapse$stockid))
 collapse_ts = collapse_yr %>%
-  count(first_collapse_yr) %>%
+  count(first_collapse_yr) %>% # Count number of stocks that collapsed each yr
   mutate(cum_first_collapse_yr = cumsum(n),
-         ratio_ever_collapsed = cum_first_collapse_yr/n_stock_assessments)
+         ratio_collapsed_yet = cum_first_collapse_yr/n_stock_assessments)
 
-ggplot(data = collapse_ts, aes(x=first_collapse_yr, y=ratio_ever_collapsed)) +
+ggplot(data = collapse_ts, aes(x=first_collapse_yr, y=ratio_collapsed_yet)) +
   geom_line()
 ```
 
