@@ -86,4 +86,139 @@ pscl::pR2(model_l)["McFadden"] # Returns 0.1231096
 
 ## Poisson model
 
+# The poisson regression is usually the best choice for modeling count data: discrete data with non-negative integer values. The poisson model can also be applied to rate data, as in the count of an event per unit of time, space, etc. The divisor of your rate data (i.e., the amount of time, space, etc. sampled) will be treated as an "offset" variable in the model. In ecology, poisson regression is appropriate for counting individuals in a survey. For example, fish counts along a transect may need to be offset by transect length if the length isn't standard in the survey. However, count of barnacles wouldn't require an offset term if the same size quadrat is always used. Number of events can also be modeled with poisson regression, such as the number of rainy days per month, with an offset for the total number of days in the month. 
+
+# There are two snags that you can run into with a poisson model: zero inflation and overdispersion. 
+
+# Zero inflation can be problematic when there is an excessive amount of zeros in your count data. Often, the mechanisms that govern zero-counts may be different from the mechanisms that govern counts of >= 1. For example, did you count zero of a certain fish species because the true number in that habitat is pretty low, or because you are in the completely wrong habitat? If you were an omniscient modeler, you would separate out the habitats that are "impossible" to find that species, and then run the model on the remaining data where it IS possible to find that species. However, it's more likely that you don't know enough to make that distinction (that's why you are conducting these surveys!). So if you have zero-inflated data, you'll have to consider removing the zeros and just explicitly modeling the positive count data, or designing a model that treats the zeros carefully (see below for more information). 
+
+# Overdispersion occurs when the observed variance in your count data is much higher than the mean. After running a poisson model, you should test for overdispersion (I use AER::dispersiontest()). If overdispersion is present, then you should switch to a different distributional family like a quasipoisson (where the variance is assumed to be a linear function of the mean) or a negative binomial (where the variance is assumed to be a quadratic function of the mean). 
+
+
+## Model the period of time that a stock is collapsed
+
+# In the fisheries unit, I was hoping to demonstrate a poisson model where I predicted fish catch (i.e. the count of fish caught) with an offset for effort. CPUE (Catch Per Unit Effort) is a ubiquitous metric in fishery research. Unfortunately, there is very little effort data in the RAM dataset, so I decided to go a different route. 
+
+# We can use a poisson distribution to model the count of years that a stock spends in the collapsed state. Is the length of time that a stock spends in the "collapsed" state dependent on how frequently it is overfished or how often its biomass is below B_MSY?
+
+# U is fishing pressure (often fishing mortalities) and B is biomass
+# U / U_MSY is actual U relative to U at Max Sustainable Yield
+# B / B_MSY is actual B relative to B at Max Sustainable Yield
+# Calculate ratio of years a stock is overfished (U/U_MSY > 1)
+# and ratio of years stock biomass is too low (B/B_MSY < 1)
+
+u_summary = timeseries_values_views %>%
+  filter(!is.na(UdivUmsypref),
+         !is.na(BdivBmsypref)) %>% 
+  group_by(stockid, stocklong) %>%
+  summarize(yrs_data = n(),
+            ratio_yrs_overfished = sum(UdivUmsypref > 1)/yrs_data,
+            ratio_yrs_low_stock = sum(BdivBmsypref < 1)/yrs_data) %>%
+  select(-yrs_data)
+
+# Count num years each stock is collapsed; join with counts of overfished-years and low-stock-years
+collapse_summary = collapse %>% 
+  group_by(stockid) %>%
+  summarize(yrs_data = n(), 
+            yrs_collapsed = sum(current_collapse)) %>%
+  inner_join(u_summary, by="stockid")
+
+# Do we have zero-inflation?
+table(collapse_summary$yrs_collapsed)
+
+# Create a zero-truncated data set to demonstrate poisson model
+collapse_summary_zero_trunc = collapse_summary %>% filter(yrs_collapsed>0)
+
+# Build poisson model
+model_p = glm(yrs_collapsed ~ ratio_yrs_overfished + ratio_yrs_low_stock, offset(log(yrs_data)), data=collapse_summary_zero_trunc, family="poisson")
+summary(model_p)
+
+# Do we have overdispersion?
+install.packages("AER")
+library(AER)
+AER::dispersiontest(model_p)$p.value < 0.05 # TRUE = overdispersed; FALSE = NOT overdispersed
+# [1] TRUE
+
+# Address overdispersion with a quasipoisson or negative binomial model
+model_qp = glm(yrs_collapsed ~ ratio_yrs_overfished + ratio_yrs_low_stock, offset(log(yrs_data)), data=collapse_summary_zero_trunc, family="quasipoisson")
+summary(model_qp)
+
+# Make predictions on the time period a stock spends collapsed as a function of low stock year rates with overfishing rates set to the observed median
+
+newdata = data.frame(ratio_yrs_low_stock = seq(from=0,to=1,by=0.1), 
+                     ratio_yrs_overfished = median(collapse_summary_zero_trunc$ratio_yrs_overfished))
+model_qp_predict = predict(model_qp, type="response", newdata=newdata, se.fit = TRUE)
+
+# Organize predictions into a tidy table
+collapse_time_predictions = cbind(newdata, model_qp_predict)
+
+# Plot predictions and SE ribbon 
+dev.new()
+ggplot() + 
+  geom_line(aes(x=ratio_yrs_low_stock, y=fit), data=collapse_time_predictions) + 
+  geom_ribbon(aes(x=ratio_yrs_low_stock, ymin = fit-se.fit, ymax = fit + se.fit), fill="darkgrey", alpha=0.5, data=collapse_time_predictions) + 
+  geom_point(aes(x=ratio_yrs_low_stock, y=yrs_collapsed), data=collapse_summary_zero_trunc) + 
+  ylab("# years stock was collapsed") + 
+  theme_bw()
+
+# What fishery has been collapsed for 90 years??
+
+collapse_summary %>% filter(yrs_collapsed > 75)
+# Georges Bank Halibut!!
+
+
+# The ocunt of years that a stock was in a collapsed state had tons of zeros, and the zero-inflation would make a problem for a poisson model fit. We dealt with this by removing the zeros, but we must keep in mind that this fundamentally changes the analysis to: "Out of the stocks that have experienced a collapse at some point, what drives the length of time they spend collapsed?". This is still an interesting (and related) question, but the results should be presented in the right context. We also found overdispersion in the data, which can lead to biased standard errors. We can address this by switching to a quasipoisson distribution. 
+
+# The final model_qp shows that the number of years that a stock is overfished does NOT significantly drive the time spent in the collapsed state, but the length of time that a stocks biomass falls below B_MSY IS a significant driver of the time spent in the collapsed state. We plotted the quasipoisson model fit across the range of possible low stock time periods, while holding the ratio of time spent in the overfished state constant at the observed median. The plot shows that the predicted time spent in the collapsed state goes from something like 10 to 20 years as the ratio of time spent in the low stock state moves from 0 to 1. 
+
+
+## Exercise 3.1: Try running the same poisson model predicting the number of years that a stock is collapsed as a function of the ratio of overfished years and the ratio of low stock years. This time, only include data from the US East Coast. Test the poisson model to see if overdispersion is an issue. If it is a problem, refit the model as a quasipoisson. Do you think there is an advantage or a disadvantage to breaking the data into distinct regions? 
+
+collapse_summary_zero_trunc_region = collapse_summary_zero_trunc %>%
+  left_join(stock %>% select(stockid, region))
+
+table(collapse_summary_zero_trunc_region$region)
+
+# Get subset of data on US East Coast
+# region == "Atlantic Ocean" 
+atlantic_collapse = collapse_summary_zero_trunc_region %>%
+  filter(region=="Atlantic Ocean")
+
+# Fit the poisson model 
+model_p_atl = glm(yrs_collapsed ~ ratio_yrs_overfished + ratio_yrs_low_stock, offset(log(yrs_data)), data=atlantic_collapse, family="poisson")
+summary(model_p_atl)
+
+# Is there overdispersion?
+AER::dispersiontest(model_p_atl)$p.value < 0.05 ## FALSE - NOT overdispersed
+
+newdata = data.frame(ratio_yrs_overfished = seq(from=0,to=1,by=0.1),
+                     ratio_yrs_low_stock = median(atlantic_collapse$ratio_yrs_low_stock))
+model_p_atl_predict = predict(model_p_atl, type="response", newdata=newdata, se.fit=TRUE)
+
+# Organize predictions into a tidy table
+predictions = cbind(newdata, model_p_atl_predict)
+
+# Plot predictions and SE ribbon
+dev.new()
+ggplot() + 
+  geom_line(aes(x=ratio_yrs_overfished, y=fit), data=predictions) + 
+  geom_ribbon(aes(x=ratio_yrs_overfished, ymin=fit - se.fit, ymax = fit + se.fit), fill="darkgrey", alpha = 0.5, data=predictions) + 
+  geom_point(aes(x=ratio_yrs_overfished, y=yrs_collapsed), data=atlantic_collapse) +
+  ylab("# years stock was collapsed") +
+  theme_bw()
+
+# When you model the Atlantic Ocean stock data on their own, you don't have a problem with overdispersion, and ratio_yrs_overfished is a significant explanatory variable. When a stock is more chronically overfished, it spends more time in the collapsed stae. Notably, there are only a few fisheries in this model. 
+
+
+## More information
+
+# A good primer on logistic regression in R: https://afit-r.github.io/logistic_regression
+
+# More info on zero inflation in poisson models: You can formally check for zero-inflation with the pscl::vuong() test. To address zero-inflation, you have three options: 1) build a zero-truncated model, which means you remove the zeros from your data and run the model on your "presence" data only. This is a simple solution, but it throws away data, and may fundamentally change the question you are answering. 2) Build a two-part of "hurdle" model where you model presence/absence with one model, and model non-zero counts with a second model; then present the results of both models together. 3) Build a mixture model that attempts to distinguish true zeros from false zeros. For more info on addressing zero inflation in R: https://fukamilab.github.io/BIO202/04-C-zero-data.html
+
+## Acknowledgments
+
+# Logistic regression figure was pulled from Data Camp:
+# https://www.datacamp.com/community/tutorials/logistic-regression-R
+
 
